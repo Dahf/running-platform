@@ -313,7 +313,9 @@ async function handleActivitySync(payload: StravaEventPayload) {
         ? (await getUserIdByAthlete(payload.owner_id))
         : undefined)
 
-  if (!userId || !payload.data) {
+  const activityInput = payload.data ?? payload.object_data
+
+  if (!userId || !activityInput) {
     throw new Error("Missing user mapping or activity data")
   }
 
@@ -331,7 +333,7 @@ async function handleActivitySync(payload: StravaEventPayload) {
     .single()
 
   try {
-    const activities = Array.isArray(payload.data) ? payload.data : [payload.data]
+    const activities = Array.isArray(activityInput) ? activityInput : [activityInput]
     let syncedCount = 0
 
     for (const activity of activities as StravaActivity[]) {

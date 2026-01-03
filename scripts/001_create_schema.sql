@@ -19,8 +19,8 @@ CREATE TABLE IF NOT EXISTS public.activities (
   elevation_gain DECIMAL, -- in meters
   average_speed DECIMAL, -- in m/s
   max_speed DECIMAL, -- in m/s
-  average_heart_rate INTEGER,
-  max_heart_rate INTEGER,
+  average_heart_rate DECIMAL,
+  max_heart_rate DECIMAL,
   calories INTEGER,
   start_date TIMESTAMP WITH TIME ZONE NOT NULL,
   polyline TEXT, -- encoded polyline for route
@@ -50,8 +50,8 @@ CREATE TABLE IF NOT EXISTS public.segment_efforts (
   activity_id UUID NOT NULL REFERENCES public.activities(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   elapsed_time INTEGER NOT NULL, -- in seconds
-  average_heart_rate INTEGER,
-  max_heart_rate INTEGER,
+  average_heart_rate DECIMAL,
+  max_heart_rate DECIMAL,
   start_date TIMESTAMP WITH TIME ZONE NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
