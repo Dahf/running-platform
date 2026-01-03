@@ -196,6 +196,9 @@ async function handleStravaUpdate(payload: StravaEventPayload) {
 
     // Lookup user by athlete id
     const userId = await getUserIdByAthlete(payload.owner_id)
+    if (!userId) {
+      throw new Error(`No user mapping for athlete ${payload.owner_id}`)
+    }
 
     const activityData = payload.object_data || (payload.data as Partial<StravaActivity> | undefined)
     const stravaId = activityData?.id ?? payload.object_id
@@ -249,28 +252,27 @@ async function handleStravaUpdate(payload: StravaEventPayload) {
     )
 
     if (existing) {
-      await supabaseAdmin.from("activities").update(updateFields).eq("strava_id", stravaId)
+      const { error } = await supabaseAdmin.from("activities").update(updateFields).eq("strava_id", stravaId)
+      if (error) throw error
       console.log("[webhook:update] updated", { stravaId })
     } else {
-      await supabaseAdmin.from("activities").insert({
+      const { error } = await supabaseAdmin.from("activities").insert({
         user_id: userId,
         strava_id: stravaId,
         external_source: "strava",
         ...updateFields,
       })
-      console.log("[webhook:update] inserted", { stravaId })
+      if (error) throw error
+      console.log("[webhook:update] inserted", { stravaId, userId })
     }
   } catch (error) {
-    console.error(
-      "[webhook:update] error",
-      JSON.stringify({
-        message: error instanceof Error ? error.message : "unknown",
-        owner_id: payload.owner_id ?? null,
-        object_id: payload.object_id ?? null,
-        aspect_type: payload.aspect_type ?? null,
-        object_type: payload.object_type ?? null,
-      }),
-    )
+    console.error("[webhook:update] error", {
+      message: error instanceof Error ? error.message : "unknown",
+      owner_id: payload.owner_id ?? null,
+      object_id: payload.object_id ?? null,
+      aspect_type: payload.aspect_type ?? null,
+      object_type: payload.object_type ?? null,
+    })
     throw error
   }
 }
