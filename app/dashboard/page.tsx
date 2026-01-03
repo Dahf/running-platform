@@ -6,6 +6,7 @@ import { ActivityFeed } from "@/components/dashboard/activity-feed"
 import { PerformanceChart } from "@/components/dashboard/performance-chart"
 import { HeartRateAnalysis } from "@/components/dashboard/heart-rate-analysis"
 import { FitnessFreshness } from "@/components/dashboard/fitness-freshness"
+import { StravaConnectButton } from "@/components/strava/strava-connect-button"
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -40,9 +41,12 @@ export default async function DashboardPage() {
     <div className="min-h-screen bg-background">
       <DashboardNav user={profile} />
       <main className="container mx-auto px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-foreground mb-2">Welcome back, {profile?.full_name}</h1>
-          <p className="text-muted-foreground">Track your progress and optimize your training</p>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold text-foreground mb-2">Welcome back, {profile?.full_name}</h1>
+            <p className="text-muted-foreground">Track your progress and optimize your training</p>
+          </div>
+          <StravaConnectButton />
         </div>
 
         <OverviewStats userId={user.id} />

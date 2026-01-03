@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { Link2, Unlink, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react"
+import { StravaConnectButton } from "@/components/strava/strava-connect-button"
 
 interface StravaConnection {
   id: string
@@ -123,27 +124,23 @@ export function StravaConnect({ userId, connection }: StravaConnectProps) {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-lg border border-dashed border-border p-6 text-center">
-              <Link2 className="h-12 w-12 mx-auto mb-3 text-muted-foreground" />
-              <p className="font-medium mb-1">Connect via n8n</p>
-              <p className="text-sm text-muted-foreground mb-4">
-                Use your n8n workflow to authenticate with Strava and send the connection details to the webhook
-                endpoint.
+            <div className="rounded-lg border border-dashed border-border p-6 text-center space-y-3">
+              <Link2 className="h-12 w-12 mx-auto text-muted-foreground" />
+              <p className="font-medium">Strava verbinden</p>
+              <p className="text-sm text-muted-foreground">
+                Öffnet das Strava-OAuth-Fenster und legt das Mapping in deinem Konto an.
               </p>
-              <div className="text-xs text-muted-foreground bg-muted p-3 rounded font-mono text-left">
-                POST /api/webhooks/n8n
-                <br />
-                {"{"} type: "connection_update", ... {"}"}
+              <div className="flex justify-center">
+                <StravaConnectButton redirectTo="/dashboard/webhooks" />
               </div>
             </div>
 
             <div className="rounded-lg border border-border p-4 bg-muted/50">
-              <h4 className="font-medium mb-2">n8n Setup Guide</h4>
+              <h4 className="font-medium mb-2">Hinweis zu n8n (optional)</h4>
               <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-                <li>Create a new n8n workflow with Strava OAuth</li>
-                <li>Use the Strava node to authenticate users</li>
-                <li>Send the tokens to our webhook endpoint</li>
-                <li>Set up activity sync triggers</li>
+                <li>Falls du n8n nutzt, kannst du Tokens auch darüber erzeugen.</li>
+                <li>Sende dann ein <code>connection_update</code> an <code>/api/webhooks/n8n</code>.</li>
+                <li>Der Button oben nutzt direkt Strava OAuth ohne n8n.</li>
               </ol>
             </div>
           </div>
