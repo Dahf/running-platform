@@ -31,23 +31,24 @@ interface StravaActivity {
   }
 }
 
-interface WebhookPayload {
-  type: "activity_sync" | "segment_sync" | "full_sync" | "connection_update"
-  user_id: string
-  strava_athlete_id?: number
+interface StravaEventPayload {
+  // Strava webhook fields
+  aspect_type?: "create" | "update" | "delete"
+  object_type?: string // "activity" | "athlete"
+  object_id?: number
+  owner_id?: number
+  subscription_id?: number
+  event_time?: number
+  // optional enrichment (from n8n or Strava detail fetch)
   data?: StravaActivity | StravaActivity[] | Record<string, unknown>
+  object_data?: Partial<StravaActivity> & { map?: { polyline?: string; summary_polyline?: string } }
+  updates?: Record<string, unknown>
+  // compatibility fields (keine Strava-Felder, aber evtl. n8n-Anreicherung)
+  user_id?: string
+  strava_athlete_id?: number
   access_token?: string
   refresh_token?: string
   token_expires_at?: string
-}
-
-interface StravaUpdatePayload {
-  type: "update"
-  owner_id?: number
-  object_id?: number
-  object_type?: string
-  updates?: Record<string, unknown>
-  object_data?: Partial<StravaActivity> & { map?: { polyline?: string; summary_polyline?: string } }
 }
 
 // Validate webhook request
@@ -80,12 +81,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const payload: Partial<WebhookPayload | StravaUpdatePayload> = await request.json()
+    const payload: Partial<StravaEventPayload> = await request.json()
 
-    // Basic payload validation
-    const allowedTypes = ["connection_update", "activity_sync", "segment_sync", "full_sync", "update"] as const
-    if (!payload.type || !allowedTypes.includes(payload.type as (typeof allowedTypes)[number])) {
-      return NextResponse.json({ error: "Invalid webhook type", received: payload.type ?? null }, { status: 400 })
+    // Strava sends aspect_type (create|update|delete)
+    const eventKind = payload.aspect_type
+    if (!eventKind) {
+      return NextResponse.json({ error: "Missing aspect_type" }, { status: 400 })
     }
 
     // Create webhook log entry
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
     const { data: logData } = await supabaseAdmin
       .from("webhook_logs")
       .insert({
-        webhook_type: payload.type,
+        webhook_type: eventKind,
         payload: payload,
         status: "received",
       })
@@ -109,29 +110,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Handle different webhook types
-    switch (payload.type) {
-      case "connection_update":
-        await handleConnectionUpdate(payload)
-        break
-
-      case "activity_sync":
+    switch (eventKind) {
+      case "create":
         await handleActivitySync(payload)
         break
-
-      case "update": // compatibility alias -> treat as activity_sync
-        await handleStravaUpdate(payload as StravaUpdatePayload)
+      case "update":
+        await handleStravaUpdate(payload)
         break
-
-      case "segment_sync":
-        await handleSegmentSync(payload)
+      case "delete":
+        await handleActivityDelete(payload)
         break
-
-      case "full_sync":
-        await handleFullSync(payload)
-        break
-
       default:
-        throw new Error(`Unknown webhook type: ${payload.type}`)
+        throw new Error(`Unknown webhook aspect/type: ${eventKind}`)
     }
 
     // Mark webhook as completed
@@ -167,9 +157,11 @@ export async function POST(request: NextRequest) {
 }
 
 // Handle Strava connection updates (tokens, etc.)
-async function handleConnectionUpdate(payload: WebhookPayload) {
-  if (!payload.user_id || !payload.strava_athlete_id) {
-    throw new Error("Missing user_id or strava_athlete_id")
+async function handleConnectionUpdate(payload: StravaEventPayload) {
+  const userId = payload.user_id
+  const athleteId = payload.strava_athlete_id ?? payload.owner_id
+  if (!userId || !athleteId) {
+    throw new Error("Missing user_id or athlete id")
   }
 
   const supabaseAdmin = getSupabaseAdmin()
@@ -191,7 +183,7 @@ async function handleConnectionUpdate(payload: WebhookPayload) {
 }
 
 // Handle Strava "update" webhook with object_data
-async function handleStravaUpdate(payload: StravaUpdatePayload) {
+async function handleStravaUpdate(payload: StravaEventPayload) {
   if (payload.object_type !== "activity") {
     throw new Error(`Unsupported object_type for update: ${payload.object_type ?? "unknown"}`)
   }
@@ -202,40 +194,40 @@ async function handleStravaUpdate(payload: StravaUpdatePayload) {
   const supabaseAdmin = getSupabaseAdmin()
 
   // Lookup user by athlete id
-  const { data: connection } = await supabaseAdmin
-    .from("strava_connections")
-    .select("user_id")
-    .eq("strava_athlete_id", payload.owner_id)
-    .single()
+  const userId = await getUserIdByAthlete(payload.owner_id)
 
-  if (!connection) {
-    throw new Error(`No user mapping for strava athlete ${payload.owner_id}`)
-  }
-
-  const activityData = payload.object_data
+  const activityData = payload.object_data || (payload.data as Partial<StravaActivity> | undefined)
   const stravaId = activityData?.id ?? payload.object_id
 
-  if (!activityData || !stravaId) {
-    throw new Error("Missing activity data or object_id on update payload")
+  if (!stravaId) {
+    throw new Error("Missing activity id/object_id on update payload")
   }
 
-  const mappedType = mapActivityType(activityData.type || activityData.sport_type || "")
-  const polyline = activityData.map?.summary_polyline ?? activityData.map?.polyline
-  const title = (payload.updates?.title as string | undefined) || activityData.name
+  // title/type updates without full payload
+  const mappedType = mapActivityType(
+    (activityData?.type as string | undefined) || (payload.updates?.type as string | undefined) || "",
+  )
+  const polyline = activityData?.map?.summary_polyline ?? activityData?.map?.polyline
+  const title =
+    (payload.updates?.title as string | undefined) ||
+    (activityData?.name as string | undefined) ||
+    (payload.updates?.name as string | undefined)
 
   const updateFields = {
-    title,
-    activity_type: mappedType,
-    distance: activityData.distance,
-    duration: activityData.moving_time,
-    elevation_gain: activityData.total_elevation_gain,
-    average_speed: activityData.average_speed,
-    max_speed: activityData.max_speed,
-    average_heart_rate: activityData.average_heartrate,
-    max_heart_rate: activityData.max_heartrate,
-    calories: activityData.calories,
-    start_date: activityData.start_date,
-    polyline,
+    ...(title ? { title } : {}),
+    ...(mappedType ? { activity_type: mappedType } : {}),
+    ...(activityData?.distance !== undefined ? { distance: activityData.distance } : {}),
+    ...(activityData?.moving_time !== undefined ? { duration: activityData.moving_time } : {}),
+    ...(activityData?.total_elevation_gain !== undefined
+      ? { elevation_gain: activityData.total_elevation_gain }
+      : {}),
+    ...(activityData?.average_speed !== undefined ? { average_speed: activityData.average_speed } : {}),
+    ...(activityData?.max_speed !== undefined ? { max_speed: activityData.max_speed } : {}),
+    ...(activityData?.average_heartrate !== undefined ? { average_heart_rate: activityData.average_heartrate } : {}),
+    ...(activityData?.max_heartrate !== undefined ? { max_heart_rate: activityData.max_heartrate } : {}),
+    ...(activityData?.calories !== undefined ? { calories: activityData.calories } : {}),
+    ...(activityData?.start_date ? { start_date: activityData.start_date } : {}),
+    ...(polyline ? { polyline } : {}),
   }
 
   // Upsert activity
@@ -243,13 +235,13 @@ async function handleStravaUpdate(payload: StravaUpdatePayload) {
     .from("activities")
     .select("id")
     .eq("strava_id", stravaId)
-    .single()
+    .maybeSingle()
 
   if (existing) {
     await supabaseAdmin.from("activities").update(updateFields).eq("strava_id", stravaId)
   } else {
     await supabaseAdmin.from("activities").insert({
-      user_id: connection.user_id,
+      user_id: userId,
       strava_id: stravaId,
       external_source: "strava",
       ...updateFields,
@@ -257,10 +249,44 @@ async function handleStravaUpdate(payload: StravaUpdatePayload) {
   }
 }
 
+// Handle Strava delete (aspect_type delete)
+async function handleActivityDelete(payload: StravaEventPayload) {
+  if (payload.object_type !== "activity") {
+    // For now ignore non-activity deletes
+    return
+  }
+
+  const stravaId = payload.object_id
+  if (!stravaId) {
+    throw new Error("Missing object_id for delete")
+  }
+
+  const supabaseAdmin = getSupabaseAdmin()
+  await supabaseAdmin.from("activities").delete().eq("strava_id", stravaId)
+}
+
+async function getUserIdByAthlete(athleteId: number): Promise<string | undefined> {
+  const supabaseAdmin = getSupabaseAdmin()
+  const { data } = await supabaseAdmin
+    .from("strava_connections")
+    .select("user_id")
+    .eq("strava_athlete_id", athleteId)
+    .maybeSingle()
+  return data?.user_id
+}
+
 // Handle activity sync from Strava
-async function handleActivitySync(payload: WebhookPayload) {
-  if (!payload.user_id || !payload.data) {
-    throw new Error("Missing user_id or activity data")
+async function handleActivitySync(payload: StravaEventPayload) {
+  const userId =
+    payload.user_id ??
+    (payload.strava_athlete_id
+      ? (await getUserIdByAthlete(payload.strava_athlete_id))
+      : payload.owner_id
+        ? (await getUserIdByAthlete(payload.owner_id))
+        : undefined)
+
+  if (!userId || !payload.data) {
+    throw new Error("Missing user mapping or activity data")
   }
 
   // Create sync history entry
@@ -309,7 +335,7 @@ async function handleActivitySync(payload: WebhookPayload) {
       } else {
         // Insert new activity
         await supabaseAdmin.from("activities").insert({
-          user_id: payload.user_id,
+          user_id: userId,
           strava_id: activity.id,
           title: activity.name,
           activity_type: mapActivityType(activity.type),
@@ -345,7 +371,7 @@ async function handleActivitySync(payload: WebhookPayload) {
     await supabaseAdmin
       .from("strava_connections")
       .update({ last_sync_at: new Date().toISOString() })
-      .eq("user_id", payload.user_id)
+      .eq("user_id", userId)
   } catch (error) {
     // Update sync history with error
     if (syncHistory?.id) {
@@ -363,13 +389,13 @@ async function handleActivitySync(payload: WebhookPayload) {
 }
 
 // Handle segment sync
-async function handleSegmentSync(payload: WebhookPayload) {
+async function handleSegmentSync(payload: StravaEventPayload) {
   // Similar implementation for segments
   console.log("Segment sync not yet implemented", payload)
 }
 
 // Handle full sync (activities + segments + routes)
-async function handleFullSync(payload: WebhookPayload) {
+async function handleFullSync(payload: StravaEventPayload) {
   await handleActivitySync(payload)
   // Add more sync operations as needed
 }
