@@ -2,7 +2,12 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 // Use service role client for webhook processing (bypasses RLS)
-const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new Error("Supabase admin client env vars missing")
+  return createClient(url, key)
+}
 
 // Webhook secret for authentication (set this in n8n and your env vars)
 const WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET || "your-webhook-secret"
@@ -69,6 +74,8 @@ export async function POST(request: NextRequest) {
     const payload: WebhookPayload = await request.json()
 
     // Create webhook log entry
+    const supabaseAdmin = getSupabaseAdmin()
+
     const { data: logData } = await supabaseAdmin
       .from("webhook_logs")
       .insert({
@@ -122,6 +129,7 @@ export async function POST(request: NextRequest) {
 
     // Log the error
     if (webhookLogId) {
+      const supabaseAdmin = getSupabaseAdmin()
       await supabaseAdmin
         .from("webhook_logs")
         .update({
@@ -144,6 +152,8 @@ async function handleConnectionUpdate(payload: WebhookPayload) {
   if (!payload.user_id || !payload.strava_athlete_id) {
     throw new Error("Missing user_id or strava_athlete_id")
   }
+
+  const supabaseAdmin = getSupabaseAdmin()
 
   const { error } = await supabaseAdmin.from("strava_connections").upsert(
     {
@@ -168,6 +178,8 @@ async function handleActivitySync(payload: WebhookPayload) {
   }
 
   // Create sync history entry
+  const supabaseAdmin = getSupabaseAdmin()
+
   const { data: syncHistory } = await supabaseAdmin
     .from("sync_history")
     .insert({

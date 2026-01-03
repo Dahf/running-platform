@@ -4,7 +4,12 @@ import { createClient } from "@supabase/supabase-js"
 // Strava webhook verification
 const STRAVA_VERIFY_TOKEN = process.env.STRAVA_VERIFY_TOKEN || "STRAVA_VERIFY"
 
-const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new Error("Supabase admin client env vars missing")
+  return createClient(url, key)
+}
 
 // Strava webhook subscription verification (GET)
 export async function GET(request: NextRequest) {
@@ -25,6 +30,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const event = await request.json()
+
+    const supabaseAdmin = getSupabaseAdmin()
 
     // Log the webhook
     await supabaseAdmin.from("webhook_logs").insert({
