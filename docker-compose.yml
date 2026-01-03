@@ -27,6 +27,7 @@ services:
         STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
         STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
+        STRAVA_REDIRECT_URI: ${STRAVA_REDIRECT_URI:-}
     restart: unless-stopped
     labels:
       - traefik.enable=true
@@ -67,6 +68,7 @@ services:
       STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
       STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
+      STRAVA_REDIRECT_URI: ${STRAVA_REDIRECT_URI:-}
     networks:
       - traefik_proxy-net
 
