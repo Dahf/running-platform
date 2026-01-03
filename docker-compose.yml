@@ -24,6 +24,8 @@ services:
         POSTGRES_DATABASE: ${POSTGRES_DATABASE:-}
         POSTGRES_USER: ${POSTGRES_USER:-}
         POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+        STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
+        STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
     restart: unless-stopped
     labels:
       - traefik.enable=true
@@ -61,6 +63,8 @@ services:
       POSTGRES_DATABASE: ${POSTGRES_DATABASE:-}
       POSTGRES_USER: ${POSTGRES_USER:-}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
+      STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
     networks:
       - traefik_proxy-net
 
