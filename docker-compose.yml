@@ -5,8 +5,6 @@ services:
     build:
       context: .
     restart: unless-stopped
-    environment:
-      - NODE_ENV=production
     labels:
       - traefik.enable=true
       - traefik.http.routers.running.entrypoints=web,websecure
