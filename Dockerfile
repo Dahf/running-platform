@@ -2,25 +2,20 @@
 
 FROM node:20-slim AS base
 
-ENV PNPM_HOME=/root/.local/share/pnpm
-ENV PATH=$PNPM_HOME:$PATH
 ENV NEXT_TELEMETRY_DISABLED=1
-
-RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
 WORKDIR /app
 
 FROM base AS deps
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json package-lock.json ./
+RUN npm ci
 
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NODE_ENV=production
-RUN pnpm build
-RUN pnpm prune --prod
+RUN npm ci
+RUN npm run build
 
 FROM base AS runner
 WORKDIR /app
