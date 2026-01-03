@@ -184,68 +184,94 @@ async function handleConnectionUpdate(payload: StravaEventPayload) {
 
 // Handle Strava "update" webhook with object_data
 async function handleStravaUpdate(payload: StravaEventPayload) {
-  if (payload.object_type !== "activity") {
-    throw new Error(`Unsupported object_type for update: ${payload.object_type ?? "unknown"}`)
-  }
-  if (!payload.owner_id) {
-    throw new Error("Missing owner_id on update payload")
-  }
+  try {
+    if (payload.object_type !== "activity") {
+      throw new Error(`Unsupported object_type for update: ${payload.object_type ?? "unknown"}`)
+    }
+    if (!payload.owner_id) {
+      throw new Error("Missing owner_id on update payload")
+    }
 
-  const supabaseAdmin = getSupabaseAdmin()
+    const supabaseAdmin = getSupabaseAdmin()
 
-  // Lookup user by athlete id
-  const userId = await getUserIdByAthlete(payload.owner_id)
+    // Lookup user by athlete id
+    const userId = await getUserIdByAthlete(payload.owner_id)
 
-  const activityData = payload.object_data || (payload.data as Partial<StravaActivity> | undefined)
-  const stravaId = activityData?.id ?? payload.object_id
+    const activityData = payload.object_data || (payload.data as Partial<StravaActivity> | undefined)
+    const stravaId = activityData?.id ?? payload.object_id
 
-  if (!stravaId) {
-    throw new Error("Missing activity id/object_id on update payload")
-  }
+    if (!stravaId) {
+      throw new Error("Missing activity id/object_id on update payload")
+    }
 
-  // title/type updates without full payload
-  const mappedType = mapActivityType(
-    (activityData?.type as string | undefined) || (payload.updates?.type as string | undefined) || "",
-  )
-  const polyline = activityData?.map?.summary_polyline ?? activityData?.map?.polyline
-  const title =
-    (payload.updates?.title as string | undefined) ||
-    (activityData?.name as string | undefined) ||
-    (payload.updates?.name as string | undefined)
+    // title/type updates without full payload
+    const mappedType = mapActivityType(
+      (activityData?.type as string | undefined) || (payload.updates?.type as string | undefined) || "",
+    )
+    const polyline = activityData?.map?.summary_polyline ?? activityData?.map?.polyline
+    const title =
+      (payload.updates?.title as string | undefined) ||
+      (activityData?.name as string | undefined) ||
+      (payload.updates?.name as string | undefined)
 
-  const updateFields = {
-    ...(title ? { title } : {}),
-    ...(mappedType ? { activity_type: mappedType } : {}),
-    ...(activityData?.distance !== undefined ? { distance: activityData.distance } : {}),
-    ...(activityData?.moving_time !== undefined ? { duration: activityData.moving_time } : {}),
-    ...(activityData?.total_elevation_gain !== undefined
-      ? { elevation_gain: activityData.total_elevation_gain }
-      : {}),
-    ...(activityData?.average_speed !== undefined ? { average_speed: activityData.average_speed } : {}),
-    ...(activityData?.max_speed !== undefined ? { max_speed: activityData.max_speed } : {}),
-    ...(activityData?.average_heartrate !== undefined ? { average_heart_rate: activityData.average_heartrate } : {}),
-    ...(activityData?.max_heartrate !== undefined ? { max_heart_rate: activityData.max_heartrate } : {}),
-    ...(activityData?.calories !== undefined ? { calories: activityData.calories } : {}),
-    ...(activityData?.start_date ? { start_date: activityData.start_date } : {}),
-    ...(polyline ? { polyline } : {}),
-  }
+    const updateFields = {
+      ...(title ? { title } : {}),
+      ...(mappedType ? { activity_type: mappedType } : {}),
+      ...(activityData?.distance !== undefined ? { distance: activityData.distance } : {}),
+      ...(activityData?.moving_time !== undefined ? { duration: activityData.moving_time } : {}),
+      ...(activityData?.total_elevation_gain !== undefined
+        ? { elevation_gain: activityData.total_elevation_gain }
+        : {}),
+      ...(activityData?.average_speed !== undefined ? { average_speed: activityData.average_speed } : {}),
+      ...(activityData?.max_speed !== undefined ? { max_speed: activityData.max_speed } : {}),
+      ...(activityData?.average_heartrate !== undefined ? { average_heart_rate: activityData.average_heartrate } : {}),
+      ...(activityData?.max_heartrate !== undefined ? { max_heart_rate: activityData.max_heartrate } : {}),
+      ...(activityData?.calories !== undefined ? { calories: activityData.calories } : {}),
+      ...(activityData?.start_date ? { start_date: activityData.start_date } : {}),
+      ...(polyline ? { polyline } : {}),
+    }
 
-  // Upsert activity
-  const { data: existing } = await supabaseAdmin
-    .from("activities")
-    .select("id")
-    .eq("strava_id", stravaId)
-    .maybeSingle()
+    // Upsert activity
+    const { data: existing } = await supabaseAdmin
+      .from("activities")
+      .select("id")
+      .eq("strava_id", stravaId)
+      .maybeSingle()
 
-  if (existing) {
-    await supabaseAdmin.from("activities").update(updateFields).eq("strava_id", stravaId)
-  } else {
-    await supabaseAdmin.from("activities").insert({
-      user_id: userId,
-      strava_id: stravaId,
-      external_source: "strava",
-      ...updateFields,
-    })
+    console.log(
+      "[webhook:update] incoming",
+      JSON.stringify({
+        stravaId,
+        owner_id: payload.owner_id,
+        hasObjectData: Boolean(activityData),
+        updates: payload.updates ?? null,
+      }),
+    )
+
+    if (existing) {
+      await supabaseAdmin.from("activities").update(updateFields).eq("strava_id", stravaId)
+      console.log("[webhook:update] updated", { stravaId })
+    } else {
+      await supabaseAdmin.from("activities").insert({
+        user_id: userId,
+        strava_id: stravaId,
+        external_source: "strava",
+        ...updateFields,
+      })
+      console.log("[webhook:update] inserted", { stravaId })
+    }
+  } catch (error) {
+    console.error(
+      "[webhook:update] error",
+      JSON.stringify({
+        message: error instanceof Error ? error.message : "unknown",
+        owner_id: payload.owner_id ?? null,
+        object_id: payload.object_id ?? null,
+        aspect_type: payload.aspect_type ?? null,
+        object_type: payload.object_type ?? null,
+      }),
+    )
+    throw error
   }
 }
 
